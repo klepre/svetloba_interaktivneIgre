@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Svetlobna odprava</title>
+<style>
+:root{
+  --bg:#0d1326; --panel:#151d38; --panel2:#1d2750; --ink:#eef1ff; --muted:#a8b1d6;
+  --accent:#ffd34d; --accent2:#7fd8ff; --ok:#4fd18b; --bad:#ff6b6b; --line:#2c3970;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.45}
+body{min-height:100vh;background:radial-gradient(ellipse at top,#1b2654 0%,var(--bg) 60%)}
+#app{max-width:920px;margin:0 auto;padding:16px}
+h1{font-size:1.9rem;margin:.3em 0;color:var(--accent);text-shadow:0 0 18px rgba(255,211,77,.45)}
+h2{font-size:1.35rem;margin:.2em 0 .5em}
+p{margin:.4em 0 .8em}
+.muted{color:var(--muted)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin:12px 0}
+.btn{appearance:none;border:0;border-radius:10px;padding:11px 18px;font-size:1rem;font-weight:600;cursor:pointer;background:var(--accent);color:#1a1a1a;transition:transform .08s,filter .15s}
+.btn:hover{filter:brightness(1.08)} .btn:active{transform:scale(.97)}
+.btn.sec{background:var(--panel2);color:var(--ink);border:1px solid var(--line)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.spread{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+input[type=text]{font-size:1.05rem;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:#0b1020;color:var(--ink);min-width:240px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.station{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;cursor:pointer;text-align:left;color:var(--ink);font:inherit;transition:border-color .15s,transform .1s}
+.station:hover{border-color:var(--accent);transform:translateY(-2px)}
+.station .ic{font-size:2rem}
+.station .t{font-weight:700;margin:.2em 0}
+.station .st{font-size:.9rem;color:var(--muted)}
+.station.done{border-color:var(--ok)}
+.opts{display:grid;gap:8px;margin:10px 0}
+.opt{text-align:left;background:var(--panel2);color:var(--ink);border:2px solid var(--line);border-radius:10px;padding:11px 14px;font-size:1rem;cursor:pointer}
+.opt:hover:not(:disabled){border-color:var(--accent2)}
+.opt.ok{border-color:var(--ok);background:#173d2c}
+.opt.bad{border-color:var(--bad);background:#43202a}
+.opt:disabled{cursor:default}
+.fb{padding:10px 12px;border-radius:10px;margin:8px 0;display:none}
+.fb.ok{display:block;background:#173d2c;border:1px solid var(--ok)}
+.fb.bad{display:block;background:#43202a;border:1px solid var(--bad)}
+.fb.info{display:block;background:#1d2a55;border:1px solid var(--accent2)}
+canvas{width:100%;height:auto;display:block;border-radius:12px;background:#060912;touch-action:none}
+.bar{height:8px;background:#0b1020;border-radius:6px;overflow:hidden;margin:6px 0 2px}
+.bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));transition:width .3s}
+.pill{display:inline-block;padding:3px 10px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);font-size:.9rem}
+.big{font-size:3rem;text-align:center;margin:.2em 0}
+.sortitem{font-size:2.6rem;text-align:center}
+.sortname{font-size:1.3rem;font-weight:700;text-align:center;margin-bottom:10px}
+.toggle{min-width:110px}
+.toggle.on.r{background:#ff4040;color:#fff}.toggle.on.g{background:#2fd04f;color:#062}.toggle.on.b{background:#3b6bff;color:#fff}
+.swatch{width:54px;height:54px;border-radius:12px;border:2px solid #fff3;display:inline-block;vertical-align:middle}
+input[type=range]{width:100%;accent-color:var(--accent)}
+table{width:100%;border-collapse:collapse}
+td,th{padding:7px 6px;border-bottom:1px solid var(--line);text-align:left}
+.stars{font-size:2.4rem;color:var(--accent);text-align:center;letter-spacing:.15em}
+.tip{font-size:.92rem;background:#11183a;border-left:4px solid var(--accent);padding:8px 12px;border-radius:6px;margin:10px 0}
+@media (max-width:560px){h1{font-size:1.5rem}#app{padding:12px}.btn{padding:10px 14px}}
+@media print{body{background:#fff;color:#000}.noprint{display:none!important}.card{border:2px solid #000;background:#fff;color:#000}h1{color:#000;text-shadow:none}.muted{color:#333}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+"use strict";
+/* ===================== SCORM 1.2 (Moodle) ===================== */
+const SCORM = (() => {
+  let api = null, active = false;
+  function find(w){ let n=0; while(w && n<12){ try{ if(w.API) return w.API; }catch(e){} if(w.parent===w) break; w=w.parent; n++; } return null; }
+  try{ api = find(window) || (window.opener ? find(window.opener) : null); }catch(e){ api=null; }
+  if(api){ try{ active = String(api.LMSInitialize(""))==="true"; }catch(e){ active=false; } }
+  const get = k => { if(!active) return ""; try{ return api.LMSGetValue(k)||""; }catch(e){ return ""; } };
+  const set = (k,v) => { if(!active) return; try{ api.LMSSetValue(k,String(v)); }catch(e){} };
+  const commit = () => { if(active) try{ api.LMSCommit(""); }catch(e){} };
+  let finished=false;
+  const finish = () => { if(active && !finished){ finished=true; try{ commit(); api.LMSFinish(""); }catch(e){} } };
+  if(active){
+    const st = get("cmi.core.lesson_status");
+    if(!st || st==="not attempted") set("cmi.core.lesson_status","incomplete");
+    commit();
+    window.addEventListener("pagehide", finish);
+    window.addEventListener("beforeunload", finish);
+  }
+  return { active, get, set, commit, finish };
+})();
+
+/* ===================== Pomočniki ===================== */
+const app = document.getElementById("app");
+const el = (tag, attrs={}, ...kids) => {
+  const e = document.createElement(tag);
+  for(const [k,v] of Object.entries(attrs)){
+    if(k==="class") e.className=v; else if(k==="html") e.innerHTML=v;
+    else if(k.startsWith("on")) e.addEventListener(k.slice(2),v); else e.setAttribute(k,v);
+  }
+  for(const k of kids.flat()){ if(k==null) continue; e.append(k instanceof Node ? k : document.createTextNode(k)); }
+  return e;
+};
+const shuffle = a => { a=[...a]; for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; };
+const praise = () => shuffle(["Odlično!","Bravo!","Super, tako je!","Pravilno!","Svetlo razmišljanje! 💡","Natanko tako!"])[0];
+
+function setupCanvas(c, W, H){
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
+  c.width = W*dpr; c.height = H*dpr;
+  const ctx = c.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0);
+  return ctx;
+}
+function canvasPoint(c, W, H, ev){
+  const r = c.getBoundingClientRect();
+  return { x:(ev.clientX-r.left)*W/r.width, y:(ev.clientY-r.top)*H/r.height };
+}
+
+/* ===================== Stanje ===================== */
+const STORE_KEY = "svetlobna-odprava-v1" + (SCORM.active ? ":" + (SCORM.get("cmi.core.student_id")||"anon") : "");
+const S = { name:"", res:{} };
+try{ const s = JSON.parse(localStorage.getItem(STORE_KEY)||"null"); if(s && s.res){ S.name=s.name||""; S.res=s.res; } }catch(e){}
+const save = () => { try{ localStorage.setItem(STORE_KEY, JSON.stringify(S)); }catch(e){} };
+
+/* ===================== Vprašanje z izbirnimi odgovori ===================== */
+/* q = {q, opts:[pravilen, napačni...], expl}  -> onDone(točke) ; prvi poskus = polne točke */
+function mcQuestion(box, q, worth, onDone){
+  const fb = el("div",{class:"fb"});
+  const next = el("button",{class:"btn",style:"display:none"},"Naprej ➜");
+  const order = shuffle(q.opts.map((t,i)=>({t,ok:i===0})));
+  const opts = el("div",{class:"opts"});
+  let answered=false;
+  for(const o of order){
+    const b = el("button",{class:"opt"}, o.t);
+    b.addEventListener("click",()=>{
+      if(answered) return; answered=true;
+      [...opts.children].forEach((x,i)=>{ x.disabled=true; if(order[i].ok) x.classList.add("ok"); });
+      if(o.ok){ fb.className="fb ok"; fb.innerHTML=`<b>${praise()}</b> ${q.expl||""}`; }
+      else { b.classList.add("bad"); fb.className="fb bad"; fb.innerHTML=`<b>Ne povsem.</b> ${q.expl||""}`; }
+      next.style.display=""; next.focus();
+      next.onclick=()=>onDone(o.ok?worth:0);
+    });
+    opts.append(b);
+  }
+  box.append(el("div",{class:"card"}, q.img?el("div",{class:"big"},q.img):null, el("h2",{},q.q), opts, fb, next));
+}
+
+/* ===================== Okvir postaje ===================== */
+function stationFrame(st, steps){
+  let i=0, pts=0, max=0;
+  const head = el("div",{class:"spread noprint"},
+    el("button",{class:"btn sec",onclick:()=>{ if(confirm("Zapustiš postajo? Napredek na tej postaji se ne shrani.")) showMap(); }},"← Zemljevid"),
+    el("span",{class:"pill",id:"ptsPill"},"Točke: 0"));
+  const title = el("h1",{},`${st.icon} ${st.title}`);
+  const bar = el("div",{class:"bar"},el("i",{style:"width:0%"}));
+  const body = el("div");
+  app.replaceChildren(head,title,bar,body);
+  window.scrollTo(0,0);
+  const run = () => {
+    bar.firstChild.style.width = (100*i/steps.length)+"%";
+    document.getElementById("ptsPill").textContent = `Točke: ${pts}`;
+    body.replaceChildren();
+    if(i>=steps.length){ return finishStation(st, pts, max); }
+    const step = steps[i];
+    max += step.worth||0;
+    step.run(body, got => { pts += got||0; i++; run(); window.scrollTo({top:0,behavior:"smooth"}); });
+  };
+  run();
+}
+function finishStation(st, pts, max){
+  const prev = S.res[st.id];
+  if(!prev || pts/max >= prev.pts/prev.max) S.res[st.id] = {pts,max};
+  save(); reportProgress();
+  const pct = Math.round(100*pts/max);
+  app.replaceChildren(
+    el("h1",{},`${st.icon} Postaja opravljena!`),
+    el("div",{class:"card"},
+      el("div",{class:"stars"}, starStr(pct)),
+      el("p",{style:"text-align:center;font-size:1.2rem"},`Zbral/-a si ${pts} od ${max} točk (${pct} %).`),
+      el("div",{class:"tip"}, el("b",{},"Ali si vedel/-a? "), st.fact),
+      el("div",{class:"row"},
+        el("button",{class:"btn",onclick:showMap},"Na zemljevid ➜"),
+        el("button",{class:"btn sec",onclick:()=>st.run()},"Poskusi znova"))));
+}
+const starStr = p => p>=90?"★★★":p>=70?"★★☆":p>=50?"★☆☆":"☆☆☆";
+
+/* ===================== POSTAJA 1: Svetila ===================== */
+function runSources(){
+  const items = shuffle([
+    {i:"☀️",n:"Sonce",src:true,e:"Sonce je zvezda – svetlobo seva samo."},
+    {i:"🌕",n:"Luna",src:false,e:"Luna ne sveti sama, odbija sončno svetlobo."},
+    {i:"🕯️",n:"Plamen sveče",src:true,e:"Pri gorenju nastaja svetloba – plamen je svetilo."},
+    {i:"🪞",n:"Ogledalo",src:false,e:"Ogledalo le odbija svetlobo, ki pade nanj."},
+    {i:"💡",n:"Prižgana žarnica",src:true,e:"Prižgana žarnica je umetno svetilo."},
+    {i:"🚲",n:"Odsevnik na kolesu",src:false,e:"Odsevnik ne sveti sam – svetlobo avtomobilskih žarometov odbije nazaj."},
+    {i:"📱",n:"Prižgan zaslon telefona",src:true,e:"Prižgan zaslon seva svetlobo – je svetilo."},
+    {i:"🪐",n:"Planet Venera",src:false,e:"Planeti so osvetljena telesa – odbijajo svetlobo Sonca. Zato Venera tako lepo »sveti« na večernem nebu."},
+    {i:"🐞",n:"Kresnica",src:true,e:"Kresnica je naravno svetilo – svetlobo ustvari s kemijsko reakcijo (bioluminiscenca)."},
+    {i:"📖",n:"Stran v knjigi",src:false,e:"Knjigo vidimo, ker odbija svetlobo v naše oči."},
+    {i:"⚡",n:"Strela",src:true,e:"Strela je naravno svetilo."},
+    {i:"🐱",n:"Mačje oči v temi",src:false,e:"Mačje oči ne svetijo same – odbijajo svetlobo (posebna odbojna plast za mrežnico)."},
+  ]).slice(0,10);
+  const steps = [{worth:0, run:(box,next)=>{
+    box.append(el("div",{class:"card"},
+      el("h2",{},"Kaj sploh vidimo?"),
+      el("p",{},"Telesa, ki svetlobo oddajajo sama, so ", el("b",{},"svetila"), " (npr. Sonce, ogenj, žarnica). Večino stvari okoli nas pa vidimo, ker ", el("b",{},"odbijajo"), " svetlobo svetil v naše oči – to so ", el("b",{},"osvetljena telesa"), "."),
+      el("p",{},"Razvrsti 10 predmetov. Za vsak pravilen odgovor dobiš točko."),
+      el("button",{class:"btn",onclick:()=>next(0)},"Začni ➜")));
+  }}];
+  for(const it of items) steps.push({worth:1, run:(box,next)=>{
+    const fb = el("div",{class:"fb"});
+    const nx = el("button",{class:"btn",style:"display:none"},"Naprej ➜");
+    let done=false;
+    const pick = (choice, btn) => {
+      if(done) return; done=true;
+      const ok = choice===it.src;
+      btn.classList.add(ok?"ok":"bad");
+      fb.className = "fb "+(ok?"ok":"bad");
+      fb.innerHTML = `<b>${ok?praise():"Ups!"}</b> ${it.n} je <b>${it.src?"svetilo":"osvetljeno telo"}</b>. ${it.e}`;
+      nx.style.display=""; nx.onclick=()=>next(ok?1:0); nx.focus();
+    };
+    const b1 = el("button",{class:"opt"},"💡 Svetilo"), b2 = el("button",{class:"opt"},"🔦 Osvetljeno telo");
+    b1.onclick=()=>pick(true,b1); b2.onclick=()=>pick(false,b2);
+    box.append(el("div",{class:"card"}, el("div",{class:"sortitem"},it.i), el("div",{class:"sortname"},it.n),
+      el("div",{class:"opts",style:"grid-template-columns:1fr 1fr"},b1,b2), fb, nx));
+  }});
+  steps.push({worth:2, run:(box,next)=>mcQuestion(box,{
+    q:"Kako snov imenujemo, če skoznjo svetloba prehaja, predmetov za njo pa ne vidimo jasno (npr. matirano steklo, peki papir)?",
+    opts:["Prosojna snov","Prozorna snov","Neprozorna snov","Svetilo"],
+    expl:"Prozorne snovi (čisto steklo, voda) prepuščajo svetlobo in skozi njih jasno vidimo. Prosojne prepuščajo svetlobo, a jo razpršijo. Neprozorne (les, kovina) svetlobe ne prepuščajo."},2,next)});
+  stationFrame(ST.izviri, steps);
+}
+
+/* ===================== POSTAJA 2: Senca ===================== */
+function runShadow(){
+  const W=600,H=300, GY=280, WX=560, OX=380, OTOP=200, LY=250;
+  const wallTop = lx => LY + (OTOP-LY)/(OX-lx)*(WX-lx);     // y vrha sence na steni
+  const shadowH = lx => Math.min(GY-20, GY - wallTop(lx));
+  function shadowRound(target, start, intro){
+    return {worth:3, run:(box,next)=>{
+      const c = el("canvas",{"aria-label":"Svetilka, predmet in senca na steni"});
+      const ctx = setupCanvas(c,W,H);
+      const slider = el("input",{type:"range",min:40,max:340,step:1,value:start,"aria-label":"Položaj svetilke"});
+      const fb = el("div",{class:"fb"});
+      const chk = el("button",{class:"btn"},"Preveri");
+      let lx = start, tries=0, dragging=false;
+      const tY = GY - target;
+      function draw(){
+        ctx.clearRect(0,0,W,H);
+        ctx.fillStyle="#0a0f22"; ctx.fillRect(0,0,W,H);
+        // svetel prostor
+        const g = ctx.createRadialGradient(lx,LY,5,lx,LY,420);
+        g.addColorStop(0,"rgba(255,220,120,.35)"); g.addColorStop(1,"rgba(255,220,120,0)");
+        ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+        // tla in stena
+        ctx.fillStyle="#2a2f45"; ctx.fillRect(0,GY,W,H-GY);
+        ctx.fillStyle="#d9d2bd"; ctx.fillRect(WX,20,W-WX,GY-20);
+        // senca (prostor za predmetom + na steni)
+        const yt = Math.max(20, wallTop(lx));
+        ctx.fillStyle="rgba(0,0,0,.55)";
+        ctx.beginPath(); ctx.moveTo(OX,GY); ctx.lineTo(OX,OTOP); ctx.lineTo(WX,yt); ctx.lineTo(WX,GY); ctx.closePath(); ctx.fill();
+        ctx.fillStyle="#3b3628"; ctx.fillRect(WX,yt,W-WX,GY-yt);
+        // tarča
+        ctx.strokeStyle="#ffd34d"; ctx.setLineDash([6,5]); ctx.lineWidth=2;
+        ctx.beginPath(); ctx.moveTo(WX-30,tY); ctx.lineTo(W,tY); ctx.stroke(); ctx.setLineDash([]);
+        ctx.font="22px sans-serif"; ctx.fillText("⭐",WX-34,tY+8);
+        // žarki
+        ctx.strokeStyle="rgba(255,230,120,.95)"; ctx.lineWidth=2;
+        ctx.beginPath(); ctx.moveTo(lx,LY); ctx.lineTo(WX,yt); ctx.stroke();
+        ctx.strokeStyle="rgba(255,230,120,.5)"; ctx.lineWidth=1.5;
+        ctx.beginPath(); ctx.moveTo(lx,LY); ctx.lineTo(OX,GY); ctx.stroke();
+        // predmet (figura)
+        ctx.fillStyle="#7fd8ff"; ctx.fillRect(OX-26,OTOP,26,GY-OTOP);
+        ctx.fillStyle="#4aa8d6"; ctx.fillRect(OX-26,OTOP,6,GY-OTOP);
+        // svetilka
+        ctx.fillStyle="#666"; ctx.fillRect(lx-3,LY+8,6,GY-LY-8);
+        ctx.fillStyle="#ffd34d"; ctx.beginPath(); ctx.arc(lx,LY,10,0,Math.PI*2); ctx.fill();
+      }
+      const setLx = v => { lx=Math.max(40,Math.min(340,v)); slider.value=lx; draw(); };
+      slider.addEventListener("input",()=>setLx(+slider.value));
+      c.addEventListener("pointerdown",e=>{ const p=canvasPoint(c,W,H,e); if(Math.abs(p.x-lx)<40){ dragging=true; c.setPointerCapture(e.pointerId);} });
+      c.addEventListener("pointermove",e=>{ if(dragging) setLx(canvasPoint(c,W,H,e).x); });
+      c.addEventListener("pointerup",()=>dragging=false);
+      chk.onclick=()=>{
+        tries++;
+        const d = shadowH(lx) - target;
+        if(Math.abs(d)<=10){
+          const got = Math.max(1,4-tries);
+          fb.className="fb ok"; fb.innerHTML=`<b>${praise()}</b> Vrh sence je pri zvezdici. Svetloba se širi <b>premočrtno</b>, zato rob sence leži na premici skozi svetilo in rob predmeta.`;
+          chk.textContent="Naprej ➜"; chk.onclick=()=>next(got); slider.disabled=true;
+        } else {
+          fb.className="fb bad";
+          fb.innerHTML = d>0 ? "Senca je <b>previsoka</b>. Kam moraš premakniti svetilko – bližje predmetu ali dlje od njega?" : "Senca je <b>prenizka</b>. Kam moraš premakniti svetilko – bližje predmetu ali dlje od njega?";
+        }
+      };
+      box.append(el("div",{class:"card"}, el("p",{},intro),
+        el("p",{class:"muted"},"Premakni svetilko (povleci jo ali uporabi drsnik), nato klikni »Preveri«."),
+        c, el("div",{style:"margin:10px 0"},slider), fb, chk));
+      draw();
+    }};
+  }
+  const steps = [
+    shadowRound(150, 60, "Senca nastane za neprozornim predmetom, kamor svetloba ne pride. Naredi tako, da bo senca na steni segla do zvezdice ⭐."),
+    shadowRound(112, 300, "Zdaj mora biti senca nižja – spet do zvezdice ⭐."),
+    {worth:2, run:(box,next)=>mcQuestion(box,{q:"Kaj se zgodi s senco, ko svetilko približamo predmetu?",
+      opts:["Senca se poveča","Senca se zmanjša","Senca ostane enaka","Senca izgine"],
+      expl:"Bližje kot je svetilo, bolj se žarki ob robu predmeta razpirajo – senca je večja. Tako delujejo tudi lutke v senčnem gledališču."},2,next)},
+    {worth:2, run:(box,next)=>mcQuestion(box,{q:"Kdaj poleg popolne sence nastane tudi polsenca?",
+      opts:["Če je svetilo veliko (razsežno) ali sta svetili dve","Le če je predmet prozoren","Če je svetilo zelo majhno (točkasto)","Polsenca nastane samo ponoči"],
+      expl:"V polsenco pride svetloba le z dela svetila. Pri točkastem svetilu je senca ostra, brez polsence."},2,next)},
+    {worth:2, run:(box,next)=>mcQuestion(box,{img:"🌑☀️",q:"Pri Sončevem mrku je …",
+      opts:["Luna med Soncem in Zemljo","Zemlja med Soncem in Luno","Sonce med Zemljo in Luno","Luna za Soncem"],
+      expl:"Lunina senca pade na Zemljo. Pri Luninem mrku pa je Zemlja med Soncem in Luno in njena senca pade na Luno."},2,next)},
+  ];
+  stationFrame(ST.senca, steps);
+}
+
+/* ===================== POSTAJA 3: Odboj (laserski labirint) ===================== */
+function runLaser(){
+  const C=60, GW=9, GH=6, W=C*GW, H=C*GH;
+  const LEVELS = [
+    {laser:{x:0,y:2,dx:1,dy:0}, target:{x:4,y:5}, mirrors:[{x:4,y:2,o:"/"}], walls:[{x:7,y:2},{x:7,y:3}],
+     txt:"Laserski žarek moraš z zrcalom usmeriti v tarčo 🎯. Klikni na zrcalo, da ga zasukaš."},
+    {laser:{x:0,y:1,dx:1,dy:0}, target:{x:7,y:0}, mirrors:[{x:3,y:1,o:"/"},{x:3,y:4,o:"/"},{x:7,y:4,o:"\\"}], walls:[{x:5,y:1},{x:5,y:2},{x:1,y:4}],
+     txt:"Tri zrcala. Opeke so neprozorne – žarek se tam ustavi."},
+    {laser:{x:0,y:5,dx:1,dy:0}, target:{x:8,y:0}, mirrors:[{x:2,y:5,o:"\\"},{x:2,y:1,o:"\\"},{x:6,y:1,o:"/"},{x:6,y:3,o:"/"},{x:8,y:3,o:"\\"},{x:4,y:4,o:"/"},{x:5,y:3,o:"\\"}],
+     walls:[{x:4,y:2},{x:4,y:3},{x:7,y:5},{x:0,y:0}], txt:"Mojstrski nivo! Nekatera zrcala so tu samo za zmedo. 😉"},
+  ];
+  function level(L, idx){
+    return {worth:3, run:(box,next)=>{
+      const mirrors = L.mirrors.map(m=>({...m}));
+      const c = el("canvas",{"aria-label":"Laserski labirint z zrcali"});
+      const ctx = setupCanvas(c,W,H);
+      const fb = el("div",{class:"fb"});
+      const nx = el("button",{class:"btn",style:"display:none"},"Naprej ➜");
+      let won=false, moves=0;
+      const at = (arr,x,y) => arr.find(o=>o.x===x&&o.y===y);
+      function trace(){
+        let {x,y,dx,dy} = L.laser; const pts=[[x*C+C/2,y*C+C/2]], hits=[];
+        for(let n=0;n<200;n++){
+          const nx2=x+dx, ny2=y+dy;
+          if(nx2<0||ny2<0||nx2>=GW||ny2>=GH){ pts.push([x*C+C/2+dx*C/2, y*C+C/2+dy*C/2]); return {pts,hits,hit:false}; }
+          if(at(L.walls,nx2,ny2)){ pts.push([x*C+C/2+dx*C/2, y*C+C/2+dy*C/2]); return {pts,hits,hit:false}; }
+          x=nx2; y=ny2;
+          if(L.target.x===x&&L.target.y===y){ pts.push([x*C+C/2,y*C+C/2]); return {pts,hits,hit:true}; }
+          const m = at(mirrors,x,y);
+          if(m){ pts.push([x*C+C/2,y*C+C/2]); hits.push(m);
+            if(m.o==="/"){ [dx,dy]=[-dy,-dx]; } else { [dx,dy]=[dy,dx]; } }
+        }
+        return {pts,hits,hit:false};
+      }
+      function draw(){
+        ctx.fillStyle="#060912"; ctx.fillRect(0,0,W,H);
+        ctx.strokeStyle="#141c3a"; ctx.lineWidth=1;
+        for(let i=0;i<=GW;i++){ ctx.beginPath(); ctx.moveTo(i*C,0); ctx.lineTo(i*C,H); ctx.stroke(); }
+        for(let j=0;j<=GH;j++){ ctx.beginPath(); ctx.moveTo(0,j*C); ctx.lineTo(W,j*C); ctx.stroke(); }
+        for(const w of L.walls){ ctx.fillStyle="#8a4b32"; ctx.fillRect(w.x*C+3,w.y*C+3,C-6,C-6);
+          ctx.strokeStyle="#5b2f1f"; ctx.lineWidth=2; ctx.beginPath();
+          ctx.moveTo(w.x*C+3,w.y*C+C/2); ctx.lineTo(w.x*C+C-3,w.y*C+C/2);
+          ctx.moveTo(w.x*C+C/2,w.y*C+3); ctx.lineTo(w.x*C+C/2,w.y*C+C/2);
+          ctx.moveTo(w.x*C+C/4,w.y*C+C/2); ctx.lineTo(w.x*C+C/4,w.y*C+C-3); ctx.stroke(); }
+        const tr = trace();
+        // tarča
+        const tx=L.target.x*C+C/2, ty=L.target.y*C+C/2;
+        for(let r=22;r>0;r-=7){ ctx.fillStyle = (r/7)%2? (tr.hit?"#4fd18b":"#ff6b6b") : "#fff"; ctx.beginPath(); ctx.arc(tx,ty,r,0,Math.PI*2); ctx.fill(); }
+        // vpadne pravokotnice
+        for(const m of tr.hits){
+          const cx=m.x*C+C/2, cy=m.y*C+C/2, k=C*0.42;
+          ctx.strokeStyle="rgba(127,216,255,.8)"; ctx.setLineDash([4,4]); ctx.lineWidth=1.5; ctx.beginPath();
+          if(m.o==="/"){ ctx.moveTo(cx-k,cy-k); ctx.lineTo(cx+k,cy+k); } else { ctx.moveTo(cx-k,cy+k); ctx.lineTo(cx+k,cy-k); }
+          ctx.stroke(); ctx.setLineDash([]);
+        }
+        // žarek
+        ctx.save(); ctx.shadowColor="#ff2a2a"; ctx.shadowBlur=14; ctx.strokeStyle="#ff3b3b"; ctx.lineWidth=4; ctx.lineJoin="round";
+        ctx.beginPath(); tr.pts.forEach(([px,py],i)=> i?ctx.lineTo(px,py):ctx.moveTo(px,py)); ctx.stroke(); ctx.restore();
+        // zrcala
+        for(const m of mirrors){
+          const cx=m.x*C+C/2, cy=m.y*C+C/2, k=C*0.38;
+          ctx.strokeStyle="#e6f3ff"; ctx.lineWidth=7; ctx.lineCap="round"; ctx.beginPath();
+          if(m.o==="/"){ ctx.moveTo(cx-k,cy+k); ctx.lineTo(cx+k,cy-k); } else { ctx.moveTo(cx-k,cy-k); ctx.lineTo(cx+k,cy+k); }
+          ctx.stroke(); ctx.strokeStyle="#7fa6c9"; ctx.lineWidth=2; ctx.stroke(); ctx.lineCap="butt";
+        }
+        for(const m of tr.hits){ ctx.fillStyle="#7fd8ff"; ctx.font="bold 12px sans-serif"; ctx.fillText("45°",m.x*C+4,m.y*C+14); }
+        // laser
+        const lx=L.laser.x*C, ly=L.laser.y*C;
+        ctx.fillStyle="#9aa3c7"; ctx.fillRect(lx+8,ly+18,C-20,C-36); ctx.fillStyle="#ff3b3b"; ctx.fillRect(lx+C-14,ly+24,6,C-48);
+        return tr;
+      }
+      c.addEventListener("click",e=>{
+        if(won) return;
+        const p = canvasPoint(c,W,H,e), gx=Math.floor(p.x/C), gy=Math.floor(p.y/C);
+        const m = at(mirrors,gx,gy); if(!m) return;
+        m.o = m.o==="/"?"\\":"/"; moves++;
+        const tr = draw();
+        if(tr.hit){ won=true;
+          fb.className="fb ok"; fb.innerHTML=`<b>${praise()}</b> Zadetek! Pri vsakem odboju je <b>odbojni kot enak vpadnemu kotu</b> (tu 45°). Oba merimo od vpadne pravokotnice (modra črtkana črta).`;
+          nx.style.display=""; nx.focus(); }
+      });
+      nx.onclick=()=>next(3);
+      box.append(el("div",{class:"card"}, el("p",{},el("b",{},`Nivo ${idx+1}/3. `),L.txt), c,
+        el("p",{class:"muted"},"Namig: zrcala se sukajo med položajema / in \\."), fb, nx));
+      draw();
+    }};
+  }
+  const steps = [
+    {worth:0, run:(box,next)=>box.append(el("div",{class:"card"},
+      el("h2",{},"Zakon odboja"),
+      el("p",{},"Ko svetlobni žarek pade na gladko površino (zrcalo), se odbije. Kot med vpadnim žarkom in ", el("b",{},"vpadno pravokotnico"), " imenujemo ", el("b",{},"vpadni kot"), ", kot med odbitim žarkom in pravokotnico pa ", el("b",{},"odbojni kot"), "."),
+      el("div",{class:"tip"},"Zakon odboja: vpadni kot = odbojni kot. Vpadni žarek, odbiti žarek in vpadna pravokotnica ležijo v isti ravnini."),
+      el("button",{class:"btn",onclick:()=>next(0)},"V laserski labirint ➜")))},
+    ...LEVELS.map(level),
+    {worth:2, run:(box,next)=>mcQuestion(box,{q:"Žarek pade na ravno zrcalo pod vpadnim kotom 30°. Kolikšen je kot med vpadnim in odbitim žarkom?",
+      opts:["60°","30°","90°","120°"],
+      expl:"Odbojni kot je prav tako 30°. Kot med žarkoma je vsota obeh: 30° + 30° = 60°. (Past: kot merimo od pravokotnice, ne od zrcala!)"},2,next)},
+    {worth:2, run:(box,next)=>mcQuestion(box,{q:"Zakaj se v gladkem ogledalu vidiš, v beli steni pa ne, čeprav obe odbijata skoraj vso svetlobo?",
+      opts:["Stena je hrapava in odbija razpršeno, ogledalo je gladko in odbija zrcalno","Stena svetlobo absorbira","Ogledalo je svetilo","Stena svetlobo lomi"],
+      expl:"Na hrapavi površini se vzporedni žarki odbijejo v vse smeri (razpršeni odboj), zato ne nastane slika."},2,next)},
+    {worth:2, run:(box,next)=>mcQuestion(box,{img:"🪞",q:"Kakšna je slika v ravnem zrcalu?",
+      opts:["Navidezna, enako velika, enako daleč za zrcalom kot je predmet pred njim","Realna in pomanjšana","Navidezna in povečana","Realna in obrnjena na glavo"],
+      expl:"Slike ne moremo ujeti na zaslon – je navidezna. Zato potrebuješ za celo postavo ogledalo, visoko vsaj pol tvoje višine!"},2,next)},
+  ];
+  stationFrame(ST.odboj, steps);
+}
+
+/* ===================== POSTAJA 4: Lom ===================== */
+function runRefraction(){
+  const W=600,H=360,OX=300,OY=180,L=210;
+  const MODES = {
+    "zv":{a:"zrak",b:"voda",n1:1.00,n2:1.33,up:true},
+    "zs":{a:"zrak",b:"steklo",n1:1.00,n2:1.50,up:true},
+    "vz":{a:"voda",b:"zrak",n1:1.33,n2:1.00,up:false},
+  };
+  const deg = r=>r*180/Math.PI, rad=d=>d*Math.PI/180;
+  const steps = [
+    {worth:0, run:(box,next)=>{
+      let mode="zv", ang=40;
+      const c = el("canvas",{"aria-label":"Lom svetlobe na meji dveh snovi"}); const ctx=setupCanvas(c,W,H);
+      const slider = el("input",{type:"range",min:0,max:80,value:ang,"aria-label":"Vpadni kot"});
+      const info = el("p",{});
+      function draw(){
+        const M = MODES[mode];
+        ctx.fillStyle="#0b1430"; ctx.fillRect(0,0,W,OY);
+        ctx.fillStyle = (M.b==="voda"||M.a==="voda") ? "#123e6b" : "#2b4b5a"; ctx.fillRect(0,OY,W,H-OY);
+        ctx.fillStyle="#cfe3ff"; ctx.font="bold 15px sans-serif";
+        const topName = M.up?M.a:M.b, botName = M.up?M.b:M.a;
+        ctx.fillText(topName.toUpperCase(),14,26); ctx.fillText(botName.toUpperCase(),14,H-14);
+        ctx.strokeStyle="#fff"; ctx.setLineDash([6,6]); ctx.lineWidth=1.5;
+        ctx.beginPath(); ctx.moveTo(OX,10); ctx.lineTo(OX,H-10); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle="#fff"; ctx.font="12px sans-serif"; ctx.fillText("vpadna pravokotnica",OX+6,20);
+        const a = rad(ang), s = M.n1/M.n2*Math.sin(a), tir = s>1;
+        const b = tir?null:Math.asin(s);
+        const sgn = M.up?1:-1;  // up: vpadni žarek prihaja od zgoraj
+        const P = (t,u) => [OX + t, OY + u];
+        const ray = (from,to,col,w,blur) => { ctx.save(); ctx.shadowColor=col; ctx.shadowBlur=blur; ctx.strokeStyle=col; ctx.lineWidth=w;
+          ctx.beginPath(); ctx.moveTo(...from); ctx.lineTo(...to); ctx.stroke(); ctx.restore(); };
+        const start = P(-L*Math.sin(a), -sgn*L*Math.cos(a));
+        ray(start,[OX,OY],"#ffe14d",4,12);
+        // puščica
+        const mx=(start[0]+OX)/2, my=(start[1]+OY)/2, ang2=Math.atan2(OY-start[1],OX-start[0]);
+        ctx.fillStyle="#ffe14d"; ctx.beginPath(); ctx.moveTo(mx+10*Math.cos(ang2),my+10*Math.sin(ang2));
+        ctx.lineTo(mx+10*Math.cos(ang2+2.5),my+10*Math.sin(ang2+2.5)); ctx.lineTo(mx+10*Math.cos(ang2-2.5),my+10*Math.sin(ang2-2.5)); ctx.fill();
+        // odbiti (delni ali popolni)
+        ray([OX,OY], P(L*Math.sin(a), -sgn*L*Math.cos(a)), tir?"#ffe14d":"rgba(255,225,77,.25)", tir?4:2, tir?12:0);
+        if(!tir) ray([OX,OY], P(L*Math.sin(b), sgn*L*Math.cos(b)), "#ffe14d",4,12);
+        // loki kotov
+        ctx.lineWidth=2;
+        if(ang>0){ ctx.strokeStyle="#ff9d4d"; ctx.beginPath();
+          if(M.up) ctx.arc(OX,OY,48,-Math.PI/2-a,-Math.PI/2); else ctx.arc(OX,OY,48,Math.PI/2,Math.PI/2+a); ctx.stroke(); }
+        if(!tir && b>0.001){ ctx.strokeStyle="#7fd8ff"; ctx.beginPath();
+          if(M.up) ctx.arc(OX,OY,62,Math.PI/2-b,Math.PI/2); else ctx.arc(OX,OY,62,-Math.PI/2,-Math.PI/2+b); ctx.stroke(); }
+        ctx.font="bold 15px sans-serif"; ctx.fillStyle="#ff9d4d";
+        ctx.fillText(`vpadni kot ${ang}°`, 360, M.up?40:H-40);
+        ctx.fillStyle="#7fd8ff";
+        ctx.fillText(tir?"POPOLNI ODBOJ!":`lomni kot ${Math.round(deg(b))}°`, 360, M.up?H-40:40);
+        let t;
+        if(ang===0) t="Žarek pada <b>pravokotno</b> na mejo – smeri ne spremeni.";
+        else if(tir) t="Pri prehodu iz vode v zrak pri velikem vpadnem kotu svetloba sploh ne izstopi – <b>popolni odboj</b>. Tako svetloba potuje po optičnih vlaknih (internet!).";
+        else if(M.n2>M.n1) t=`Prehod v optično gostejšo snov (${M.b}): žarek se lomi <b>k vpadni pravokotnici</b> (lomni kot < vpadni kot).`;
+        else t=`Prehod v optično redkejšo snov (${M.b}): žarek se lomi <b>od vpadne pravokotnice</b> (lomni kot > vpadni kot).`;
+        info.innerHTML=t;
+      }
+      slider.addEventListener("input",()=>{ ang=+slider.value; draw(); });
+      const mbtns = Object.entries(MODES).map(([k,M])=>{ const b=el("button",{class:"btn sec"},`${M.a} → ${M.b}`);
+        b.onclick=()=>{ mode=k; mbtns.forEach(x=>x.style.outline=""); b.style.outline="2px solid var(--accent)"; draw(); }; return b; });
+      mbtns[0].style.outline="2px solid var(--accent)";
+      box.append(el("div",{class:"card"},
+        el("h2",{},"Laboratorij: lom svetlobe"),
+        el("p",{},"Ko svetloba preide iz ene prozorne snovi v drugo, se na meji ", el("b",{},"lomi"), " – spremeni smer, ker ima v različnih snoveh različno hitrost. Raziskuj: spreminjaj vpadni kot in snovi. Opazuj, kdaj se žarek lomi k pravokotnici in kdaj od nje."),
+        el("div",{class:"row",style:"margin-bottom:10px"},...mbtns), c,
+        el("label",{},"Vpadni kot: ",slider), info,
+        el("button",{class:"btn",onclick:()=>next(0)},"Pripravljen/-a sem na vprašanja ➜")));
+      draw();
+    }},
+    {worth:2, run:(box,next)=>mcQuestion(box,{q:"Žarek preide poševno iz zraka v vodo. Kako se lomi?",
+      opts:["K vpadni pravokotnici","Od vpadne pravokotnice","Ne spremeni smeri","Vrne se v zrak"],
+      expl:"Voda je optično gostejša od zraka – svetloba je v njej počasnejša in se lomi k pravokotnici."},2,next)},
+    {worth:2, run:(box,next)=>mcQuestion(box,{q:"Žarek pada na gladino vode pravokotno (vpadni kot 0°). Kaj se zgodi?",
+      opts:["Nadaljuje pot v isti smeri","Lomi se k pravokotnici","Lomi se od pravokotnice","Popolnoma se odbije"],
+      expl:"Pri pravokotnem vpadu se smer ne spremeni, spremeni se le hitrost svetlobe."},2,next)},
+    {worth:2, run:(box,next)=>mcQuestion(box,{img:"🥤✏️",q:"Zakaj je svinčnik v kozarcu vode videti »zlomljen«?",
+      opts:["Ker se svetloba na meji voda–zrak lomi","Ker voda svinčnik res upogne","Ker se svetloba v vodi ne širi","Ker kozarec deluje kot ravno zrcalo"],
+      expl:"Svetloba od dela svinčnika pod vodo spremeni smer, ko izstopi v zrak. Naše oko misli, da je prišla po ravni črti – zato vidimo svinčnik na drugem mestu."},2,next)},
+    {worth:2, run:(box,next)=>mcQuestion(box,{img:"🔍",q:"Kaj naredi zbiralna leča (npr. povečevalno steklo) z vzporednimi žarki?",
+      opts:["Zbere jih v gorišču","Razprši jih narazen","Odbije jih nazaj","Jih obarva"],
+      expl:"Zbiralna leča je na sredini debelejša. Vzporedne žarke zbere v gorišču – zato lahko z lupo na soncu zažgeš list (pazi!). Zbiralno lečo ima tudi naše oko."},2,next)},
+    {worth:2, run:(box,next)=>mcQuestion(box,{q:"Ribič vidi ribo v vodi. Kje je riba v resnici?",
+      opts:["Globlje, kot se zdi","Pliče, kot se zdi","Točno tam, kjer jo vidi","Riba je le odsev neba"],
+      expl:"Zaradi loma je voda videti plitvejša, kot je. Zato ribe (in kamni na dnu bazena) izgledajo bližje gladini."},2,next)},
+  ];
+  stationFrame(ST.lom, steps);
+}
+
+/* ===================== POSTAJA 5: Barve ===================== */
+function runColors(){
+  const W=420,H=320;
+  const TASKS = [
+    {n:"rumeno",set:"rg",col:"#ffff00"},
+    {n:"škrlatno (magenta)",set:"rb",col:"#ff00ff"},
+    {n:"modrozeleno (cian)",set:"gb",col:"#00ffff"},
+    {n:"belo",set:"rgb",col:"#ffffff"},
+  ];
+  function mix(t){ return {worth:3, run:(box,next)=>{
+    const on = {r:false,g:false,b:false};
+    const c = el("canvas",{"aria-label":"Mešanje svetlob treh reflektorjev"}); const ctx=setupCanvas(c,W,H);
+    const fb = el("div",{class:"fb"}); const chk = el("button",{class:"btn"},"Preveri");
+    let tries=0;
+    function draw(){
+      ctx.globalCompositeOperation="source-over"; ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H);
+      ctx.globalCompositeOperation="lighter";
+      const spots = [["r","#ff0000",165,125],["g","#00ff00",255,125],["b","#0000ff",210,205]];
+      for(const [k,col,x,y] of spots){ if(!on[k]) continue; ctx.fillStyle=col; ctx.beginPath(); ctx.arc(x,y,92,0,Math.PI*2); ctx.fill(); }
+      ctx.globalCompositeOperation="source-over";
+      if(!on.r&&!on.g&&!on.b){ ctx.fillStyle="#666"; ctx.font="16px sans-serif"; ctx.fillText("Vsi reflektorji so ugasnjeni – tema.",80,165); }
+    }
+    const tg = (k,label) => { const b = el("button",{class:`btn sec toggle ${k}`,"aria-pressed":"false"},label);
+      b.onclick=()=>{ on[k]=!on[k]; b.classList.toggle("on",on[k]); b.setAttribute("aria-pressed",on[k]); draw(); }; return b; };
+    chk.onclick=()=>{
+      tries++;
+      const cur = ["r","g","b"].filter(k=>on[k]).join("");
+      if(cur===t.set){
+        const got=Math.max(1,4-tries);
+        const names={r:"rdeča",g:"zelena",b:"modra"};
+        fb.className="fb ok"; fb.innerHTML=`<b>${praise()}</b> ${t.set.split("").map(k=>names[k]).join(" + ")} svetloba = ${t.n} svetloba.`;
+        chk.textContent="Naprej ➜"; chk.onclick=()=>next(got);
+      } else { fb.className="fb bad"; fb.innerHTML="Še ni prava barva. Poskusi drugo kombinacijo reflektorjev!"; }
+    };
+    box.append(el("div",{class:"card"},
+      el("p",{},"Prižigaj reflektorje in na sredini ustvari ", el("b",{},t.n), " svetlobo: ", el("span",{class:"swatch",style:`background:${t.col}`})),
+      el("div",{class:"row",style:"margin-bottom:10px"}, tg("r","🔴 rdeča"), tg("g","🟢 zelena"), tg("b","🔵 modra")),
+      c, fb, chk));
+    draw();
+  }}; }
+  const steps = [
+    {worth:0, run:(box,next)=>box.append(el("div",{class:"card"},
+      el("h2",{},"Bela svetloba je mešanica barv"),
+      el("p",{},"Že Isaac Newton je s ", el("b",{},"prizmo"), " razklonil belo svetlobo v ", el("b",{},"spekter"), ": rdeča, oranžna, rumena, zelena, modra, vijolična. Mavrica je naravni spekter – vlogo prizme imajo kapljice dežja."),
+      el("p",{},"Zasloni telefonov in televizorjev pa vse barve sestavijo iz samo treh svetlob: ", el("b",{style:"color:#ff6b6b"},"rdeče"), ", ", el("b",{style:"color:#4fd18b"},"zelene"), " in ", el("b",{style:"color:#7fa6ff"},"modre"), " (RGB). Preizkusi!"),
+      el("button",{class:"btn",onclick:()=>next(0)},"V studio luči ➜")))},
+    ...TASKS.map(mix),
+    {worth:2, run:(box,next)=>mcQuestion(box,{img:"🌿",q:"Zakaj vidimo list zelen, ko ga osvetljuje bela svetloba?",
+      opts:["Odbija zeleno svetlobo, druge barve pa vpije (absorbira)","Vpije zeleno svetlobo, druge odbija","Sam oddaja zeleno svetlobo","Zelene svetlobe sploh ni v beli"],
+      expl:"Barva telesa je barva svetlobe, ki jo telo odbija. Ostale barve absorbira (njihova energija se spremeni v notranjo energijo – telo se segreje)."},2,next)},
+    {worth:2, run:(box,next)=>mcQuestion(box,{img:"🍓",q:"Rdečo jagodo osvetlimo samo z modro svetlobo. Kakšne barve jo vidimo?",
+      opts:["Skoraj črno","Rdečo","Modro","Vijolično"],
+      expl:"Jagoda odbija le rdečo svetlobo. Modro absorbira, rdeče pa v modri svetlobi ni – zato je videti temna, skoraj črna."},2,next)},
+    {worth:2, run:(box,next)=>mcQuestion(box,{q:"Zakaj se poleti bolj segrejemo v črni majici kot v beli?",
+      opts:["Črna majica absorbira več svetlobe","Črna majica odbija več svetlobe","Bela majica je svetilo","Črna majica je prozorna"],
+      expl:"Črna telesa vpijejo skoraj vso svetlobo, bela pa jo večino odbijejo."},2,next)},
+  ];
+  stationFrame(ST.barve, steps);
+}
+
+/* ===================== POSTAJA 6: Končni izziv ===================== */
+function runQuiz(){
+  const Q = [
+    {q:"Kolikšna je hitrost svetlobe v praznem prostoru (vakuumu)?",opts:["približno 300 000 km/s","približno 340 m/s","približno 300 km/s","približno 3000 km/h"],
+     expl:"c ≈ 300 000 km/s = 3·10⁸ m/s. 340 m/s je hitrost zvoka v zraku."},
+    {q:"Sonce je od Zemlje oddaljeno približno 150 000 000 km. Koliko časa potuje svetloba do nas?",opts:["približno 8 minut","približno 1 sekundo","približno 8 ur","približno 1 dan"],
+     expl:"t = s / c = 150 000 000 km : 300 000 km/s = 500 s ≈ 8 min 20 s. Sonce torej vidimo takšno, kot je bilo pred 8 minutami!"},
+    {q:"Luna je od Zemlje oddaljena približno 384 000 km. Koliko časa potrebuje svetloba z Lune do nas?",opts:["približno 1,3 s","približno 13 s","približno 0,13 s","približno 2 minuti"],
+     expl:"t = 384 000 km : 300 000 km/s ≈ 1,3 s. Astronavti Apolla so imeli zato pri pogovoru z Zemljo opazen zamik."},
+    {img:"⛈️",q:"Med nevihto najprej vidimo blisk, šele nato slišimo grom. Zakaj?",opts:["Svetloba je veliko hitrejša od zvoka","Blisk nastane prej kot grom","Zvok potuje hitreje od svetlobe","Oči so hitrejše od ušes"],
+     expl:"Oba nastaneta hkrati. Svetloba pride praktično takoj, zvok pa prepotuje ~1 km v 3 s. Štej sekunde in deli s 3 – dobiš oddaljenost nevihte v km."},
+    {q:"Kateri pojav je dokaz, da se svetloba širi premočrtno?",opts:["Ostre sence predmetov","Mavrica","Zlomljen svinčnik v vodi","Odsev v izložbi"],
+     expl:"Senca ima obliko predmeta, ker svetloba ne zavije okoli njega – širi se v ravnih črtah (žarkih)."},
+    {img:"👁️",q:"Kje v očesu nastane slika predmeta, ki ga gledamo?",opts:["Na mrežnici","Na šarenici","Na roženici","V zenici"],
+     expl:"Očesna leča (skupaj z roženico) zbere svetlobo na mrežnico, kjer so čutnice. Signal po vidnem živcu potuje v možgane."},
+    {q:"Kaj se zgodi z zenico, ko iz teme stopiš na močno sonce?",opts:["Se zoži","Se razširi","Ostane enaka","Spremeni barvo"],
+     expl:"Šarenica zoži zenico, da v oko pride manj svetlobe. To lahko preizkusiš pred ogledalom!"},
+    {q:"Zakaj vidiš knjigo na mizi, čeprav knjiga ne sveti?",opts:["Ker knjiga odbija svetlobo v naše oči","Ker oči oddajajo žarke proti knjigi","Ker knjiga absorbira vso svetlobo","Ker je knjiga prozorna"],
+     expl:"Vidimo samo, ko svetloba pride v naše oko – od svetila neposredno ali odbita od osvetljenega telesa."},
+    {q:"Iz katere snovi bi naredil/-a okno kopalnice, da prepušča svetlobo, a se skozi ne vidi?",opts:["Iz prosojne snovi (matirano steklo)","Iz prozorne snovi (čisto steklo)","Iz neprozorne snovi (les)","Iz zrcala"],
+     expl:"Prosojna snov prepušča svetlobo, a jo razprši, zato skoznjo ne vidimo jasno."},
+    {q:"Kaj se zgodi, ko bela svetloba preide skozi stekleno prizmo?",opts:["Razkloni se v barvni spekter","Postane rdeča","Se ustavi","Postane bolj bela"],
+     expl:"Različne barve se v steklu lomijo različno močno (vijolična najbolj, rdeča najmanj), zato se bela svetloba razkloni v spekter."},
+  ];
+  const steps = [{worth:0, run:(box,next)=>box.append(el("div",{class:"card"},
+    el("h2",{},"Končni izziv ⚡"),
+    el("p",{},"10 vprašanj o vsem, kar si spoznal/-a, ter o hitrosti svetlobe in vidu. Pri računskih vprašanjih si lahko pomagaš z ", el("b",{},"t = s / c"), ", kjer je c ≈ 300 000 km/s."),
+    el("button",{class:"btn",onclick:()=>next(0)},"Začni ➜")))}];
+  for(const q of shuffle(Q)) steps.push({worth:2, run:(box,next)=>mcQuestion(box,q,2,next)});
+  stationFrame(ST.izziv, steps);
+}
+
+/* ===================== Postaje ===================== */
+const ST = {
+  izviri:{id:"izviri",icon:"💡",title:"Svetila in osvetljena telesa",desc:"Kaj sveti samo in kaj le odbija svetlobo?",run:runSources,
+    fact:"Najbolj oddaljen posamezen objekt, ki so ga astronomi kdaj videli, je zvezda Earendel (vesoljski teleskop Hubble, 2022). Njena svetloba je k nam potovala skoraj 13 milijard let!"},
+  senca:{id:"senca",icon:"🌗",title:"Premočrtno širjenje in senca",desc:"Upravljaj svetilko in ujemi senco.",run:runShadow,
+    fact:"12. avgusta 2026 je bil popolni Sončev mrk viden v Španiji in na Islandiji, v Sloveniji pa smo videli delni mrk. Senca Lune je po Zemlji drvela s hitrostjo več kot 1700 km/h!"},
+  odboj:{id:"odboj",icon:"🪞",title:"Odboj – laserski labirint",desc:"Zasukaj zrcala in zadeni tarčo.",run:runLaser,
+    fact:"Astronavti Apolla so na Luni pustili posebne odsevnike. Znanstveniki vanje še danes usmerjajo laserje in tako merijo razdaljo do Lune na nekaj milimetrov natančno."},
+  lom:{id:"lom",icon:"🌊",title:"Lom svetlobe",desc:"Laboratorij z vodo in steklom.",run:runRefraction,
+    fact:"Internet med celinami potuje po optičnih vlaknih na dnu oceanov. Svetloba je v vlaknu ujeta zaradi popolnega odboja – prav tistega, ki si ga videl/-a v laboratoriju."},
+  barve:{id:"barve",icon:"🌈",title:"Barve svetlobe",desc:"Mešaj rdečo, zeleno in modro luč.",run:runColors,
+    fact:"Če od blizu pogledaš zaslon telefona skozi kapljico vode na zaslonu (deluje kot lupa), vidiš drobne rdeče, zelene in modre točke – piksle."},
+  izziv:{id:"izziv",icon:"⚡",title:"Končni izziv: hitrost svetlobe in vid",desc:"10 vprašanj za pravega mojstra svetlobe.",run:runQuiz,
+    fact:"Svetloba bi v eni sekundi obkrožila Zemljo približno 7,5-krat."},
+};
+const ORDER = ["izviri","senca","odboj","lom","barve","izziv"];
+
+/* ===================== Rezultat ===================== */
+function totals(){
+  let p=0,m=0; for(const k of ORDER){ const r=S.res[k]; if(r){ p+=r.pts; m+=r.max; } }
+  return {p,m,done:ORDER.filter(k=>S.res[k]).length};
+}
+function percentAll(){
+  // vsaka postaja enako utežena
+  let sum=0; for(const k of ORDER){ const r=S.res[k]; if(r) sum += r.pts/r.max; }
+  return Math.round(100*sum/ORDER.length);
+}
+function reportProgress(){
+  if(!SCORM.active) return;
+  const t = totals(), pct = percentAll();
+  SCORM.set("cmi.core.score.min",0); SCORM.set("cmi.core.score.max",100); SCORM.set("cmi.core.score.raw",pct);
+  if(t.done===ORDER.length) SCORM.set("cmi.core.lesson_status", pct>=50?"passed":"failed");
+  else SCORM.set("cmi.core.lesson_status","incomplete");
+  SCORM.commit();
+}
+
+/* ===================== Zasloni ===================== */
+function showIntro(){
+  let nm = S.name;
+  if(!nm && SCORM.active){ const s=SCORM.get("cmi.core.student_name"); if(s){ const p=s.split(","); nm = p.length>1 ? (p[1].trim()+" "+p[0].trim()) : s; } }
+  const inp = el("input",{type:"text",placeholder:"Tvoje ime",value:nm||"","aria-label":"Ime"});
+  const go = () => { S.name = inp.value.trim()||"Raziskovalec"; save(); showMap(); };
+  inp.addEventListener("keydown",e=>{ if(e.key==="Enter") go(); });
+  app.replaceChildren(
+    el("div",{class:"big"},"🔦✨🌈"),
+    el("h1",{style:"text-align:center"},"Svetlobna odprava"),
+    el("div",{class:"card"},
+      el("p",{},"Dobrodošel/-a v laboratoriju svetlobe! Čaka te ", el("b",{},"6 postaj"), ": svetila, sence, zrcala z laserjem, lom svetlobe, barve in končni izziv."),
+      el("p",{},"Na vsaki postaji zbiraš točke in zvezdice ★. Napake niso problem – iz vsake se nekaj naučiš. 😊"),
+      el("div",{class:"row"}, inp, el("button",{class:"btn",onclick:go},"Začni odpravo ➜"))),
+    el("p",{class:"muted",style:"text-align:center;font-size:.85rem"},"Fizika, 8. razred · sklop Svetloba"));
+  inp.focus();
+}
+function showMap(){
+  const t = totals();
+  const grid = el("div",{class:"grid"});
+  ORDER.forEach((k,i)=>{
+    const st=ST[k], r=S.res[k];
+    const pct = r?Math.round(100*r.pts/r.max):null;
+    grid.append(el("button",{class:"station"+(r?" done":""),onclick:()=>st.run()},
+      el("div",{class:"spread"},el("span",{class:"ic"},st.icon), el("span",{class:"pill"},`Postaja ${i+1}`)),
+      el("div",{class:"t"},st.title), el("div",{class:"st"},st.desc),
+      el("div",{class:"st",style:"margin-top:6px;color:"+(r?"var(--accent)":"var(--muted)")}, r?`${starStr(pct)}  ${r.pts}/${r.max} točk`:"še ni opravljena")));
+  });
+  app.replaceChildren(
+    el("div",{class:"spread"}, el("h1",{},"🗺️ Zemljevid odprave"), el("span",{class:"pill"},`👤 ${S.name}`)),
+    el("p",{class:"muted"},"Postaje lahko rešuješ v poljubnem vrstnem redu, priporočamo pa od prve do zadnje. Vsako lahko ponoviš – šteje najboljši rezultat."),
+    el("div",{class:"bar"},el("i",{style:`width:${100*t.done/ORDER.length}%`})),
+    el("p",{class:"muted"},`Opravljenih postaj: ${t.done}/${ORDER.length}`),
+    grid,
+    el("div",{class:"row",style:"margin-top:16px"},
+      el("button",{class:"btn",id:"finalBtn",onclick:showFinal}, t.done<ORDER.length?"🏆 Potrdilo (opravi vse postaje)":"🏆 Prevzemi potrdilo"),
+      el("button",{class:"btn sec",onclick:()=>{ if(confirm("Res začneš čisto od začetka? Vsi rezultati bodo izbrisani.")){ S.res={}; save(); reportProgress(); showIntro(); } }},"Začni znova")));
+  document.getElementById("finalBtn").disabled = t.done<ORDER.length;
+  window.scrollTo(0,0);
+}
+function showFinal(){
+  const pct = percentAll(); reportProgress();
+  const title = pct>=90?"Mojster svetlobe 🌟":pct>=70?"Svetlobni raziskovalec 🔦":pct>=50?"Vajenec svetlobe 💡":"Svetlobni začetnik 🕯️";
+  const rows = ORDER.map(k=>{ const r=S.res[k]; const p=Math.round(100*r.pts/r.max);
+    return el("tr",{}, el("td",{},`${ST[k].icon} ${ST[k].title}`), el("td",{},`${r.pts}/${r.max}`), el("td",{},`${p} %`)); });
+  const d = new Date();
+  app.replaceChildren(
+    el("div",{class:"card",style:"text-align:center"},
+      el("div",{class:"big"},"🏆"),
+      el("h1",{},"Potrdilo o opravljeni Svetlobni odpravi"),
+      el("p",{style:"font-size:1.3rem"},el("b",{},S.name)),
+      el("p",{},"je uspešno prehodil/-a vseh 6 postaj in prejme naziv"),
+      el("h2",{style:"color:var(--accent)"},title),
+      el("div",{class:"stars"},starStr(pct)),
+      el("p",{style:"font-size:1.4rem"},`Skupni rezultat: ${pct} %`),
+      el("p",{class:"muted"},d.toLocaleDateString("sl-SI"))),
+    el("div",{class:"card"}, el("table",{}, el("tr",{},el("th",{},"Postaja"),el("th",{},"Točke"),el("th",{},"%")), ...rows)),
+    SCORM.active ? el("p",{class:"muted noprint"},"✅ Rezultat je shranjen v spletni učilnici.") : null,
+    el("div",{class:"row noprint"},
+      el("button",{class:"btn",onclick:()=>window.print()},"🖨️ Natisni / shrani PDF"),
+      el("button",{class:"btn sec",onclick:showMap},"← Zemljevid")));
+  window.scrollTo(0,0);
+}
+
+S.name ? showMap() : showIntro();
+</script>
+</body>
+</html>
